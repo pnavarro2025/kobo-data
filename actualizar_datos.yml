@@ -1,4 +1,4 @@
- name: Actualizar CSV desde Google
+name: Actualizar CSV desde Google
 
 on:
   schedule:
