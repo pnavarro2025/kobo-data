@@ -13,7 +13,7 @@ jobs:
 
      - name: Descargar datos de Google Sheets
         run: |
-          curl -L "https://script.google.com/macros/s/AKfycbzT88obTu0hGX-ccdEMhD4c0xbRxYVJxcRQa3Yc0O60diqp4CcgqZKPMjJZc1w7bHY/exec" -o Exportar_Nutricion.csv
+          curl -L "https://script.google.com/macros/s/AKfycbzT88obTu0hGX-ccdEMhD4c0xbRxYVJxcRQa3Yc0O60diqp4CcgqZKPMjJZc1w7bHY/exec
       - name: Guardar cambios en GitHub
         run: |
           git config --global user.name 'GitHub Action'
