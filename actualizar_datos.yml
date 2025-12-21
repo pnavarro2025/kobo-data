@@ -14,7 +14,6 @@ jobs:
       - name: Descargar datos de Google Sheets
         run: |
           curl -L "https://docs.google.com/spreadsheets/d/1SVngRRAcMq9Jn3ZSH0tGql4CbytCcidI2ESQ6LEGXs/export?format=csv&gid=554583428" -o Exportar_Nutricion.csv
-
       - name: Guardar cambios en GitHub
         run: |
           git config --global user.name 'GitHub Action'
