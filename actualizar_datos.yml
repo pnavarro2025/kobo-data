@@ -1,9 +1,15 @@
 name: Update Exportar_Nutricion.csv from Google Sheets
 
+permissions:
+  contents: write
+
 on:
   schedule:
     - cron: '0 * * * *' # Se ejecuta cada hora
   workflow_dispatch: # Permite ejecución manual
+
+env:
+  SHEET_CSV_URL: "https://docs.google.com/spreadsheets/d/e/2PACX-1vST5tQDJLdinNhkOJZOWV9RbTYP0qZCyj2qcLBHnfDU_RdJeGgTNVmBQQ6VM-PwqvyzrgTCMc_Gyp1U/pub?gid=554583428&single=true&output=csv"
 
 jobs:
   update-csv:
@@ -12,9 +18,38 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download CSV from Google Sheets
+      - name: Download CSV from Google Sheets (with checks)
         run: |
-          curl -fsSL "https://docs.google.com/spreadsheets/d/e/2PACX-1vST5tQDJLdinNhkOJZOWV9RbTYP0qZCyj2qcLBHnfDU_RdJeGgTNVmBQQ6VM-PwqvyzrgTCMc_Gyp1U/pub?gid=554583428&single=true&output=csv" -o Exportar_Nutricion_raw.csv
+          set -euo pipefail
+          URL="$SHEET_CSV_URL"
+          echo "Downloading from: $URL"
+          headers="$(mktemp)"
+          curl -sSL -D "$headers" -o Exportar_Nutricion_raw.csv "$URL" || true
+          # HTTP status
+          http_code=$(head -n1 "$headers" | awk '{print $2}')
+          content_type=$(grep -i '^Content-Type:' "$headers" | awk '{for(i=2;i<=NF;i++) printf $i " "}' | sed 's/\r$//' | awk '{$1=$1; print}')
+          echo "HTTP code: $http_code"
+          echo "Content-Type: $content_type"
+          if [ "$http_code" != "200" ]; then
+            echo "Error: HTTP $http_code al descargar la hoja. La URL puede ser inválida o la hoja no es pública."
+            echo "Inicio del contenido descargado:"
+            head -n 30 Exportar_Nutricion_raw.csv || true
+            exit 1
+          fi
+          # If content-type says html, fail
+          if echo "$content_type" | grep -qi 'html'; then
+            echo "La respuesta tiene Content-Type HTML — probablemente Page Not Found o acceso denegado."
+            echo "Inicio del contenido descargado:"
+            head -n 30 Exportar_Nutricion_raw.csv || true
+            exit 1
+          fi
+          # Also check the file content for HTML markers
+          if head -n 1 Exportar_Nutricion_raw.csv | grep -Eiq '<!doctype|<html|<HTML'; then
+            echo "Detección: el archivo descargado comienza con HTML. Revisa que la hoja esté publicada como CSV o compartida públicamente."
+            head -n 30 Exportar_Nutricion_raw.csv || true
+            exit 1
+          fi
+          echo "CSV descargado correctamente."
 
       - name: Normalize CSV for KoboToolbox (UTF-8, commas, remove BOM, normalize headers)
         working-directory: ${{ github.workspace }}
@@ -30,21 +65,19 @@ jobs:
               print("Input file not found:", infile)
               sys.exit(1)
 
-          # Read raw bytes and decode with utf-8-sig to remove BOM if present.
           raw = infile.read_bytes()
           text = raw.decode("utf-8-sig", errors="replace")
 
           # Normalize line endings and non-breaking spaces
           text = text.replace('\r\n', '\n').replace('\r', '\n').replace('\u00A0', ' ')
 
-          # Try to detect delimiter (comma, semicolon, tab). Fallback to comma.
+          # Use csv.Sniffer to try to detect delimiter; fallback to comma
           sample = text[:8192]
           try:
               dialect = csv.Sniffer().sniff(sample, delimiters=[',',';','\t'])
               delim = dialect.delimiter
           except Exception:
               delim = ','
-          # Read using detected delimiter
           reader = csv.reader(io.StringIO(text), delimiter=delim)
           rows = list(reader)
 
@@ -52,22 +85,26 @@ jobs:
           if rows:
               rows[0] = [h.strip() if isinstance(h, str) else h for h in rows[0]]
 
+          # Optional: normalize header names to safer form for Kobo (uncomment if desired)
+          # rows[0] = [h.strip().replace(' ', '_').lower() for h in rows[0]]
+
           # Write normalized CSV with comma delimiter and UTF-8 (no BOM)
           with outfile.open('w', encoding='utf-8', newline='') as f:
               writer = csv.writer(f, delimiter=',', quoting=csv.QUOTE_MINIMAL)
               writer.writerows(rows)
 
-          print("Normalized CSV written to", outfile)
+          print(f"Normalized CSV written to {outfile} (rows={len(rows)})")
           PY
 
       - name: Commit and push if changed
         run: |
+          set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           # Ensure push uses the workflow token
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           if [ ! -s Exportar_Nutricion.csv ]; then
-            echo "Exportar_Nutricion.csv is empty or missing — aborting commit."
+            echo "Exportar_Nutricion.csv está vacío o no existe — abortando commit."
             exit 1
           fi
           if ! git diff --quiet -- Exportar_Nutricion.csv; then
