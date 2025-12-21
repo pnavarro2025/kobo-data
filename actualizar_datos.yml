@@ -1,9 +1,9 @@
-name: Actualizar CSV desde Google
+name: Sincronizacion Directa Google-GitHub
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *' # Se ejecuta cada hora
+  workflow_dispatch: # Permite ejecutarlo manualmente
 
 jobs:
   build:
@@ -12,14 +12,14 @@ jobs:
       - name: Checkout del repositorio
         uses: actions/checkout@v3
 
-      - name: Descargar datos de Google Sheets
+      - name: Descargar CSV de Google Sheets
         run: |
-          wget --no-check-certificate --user-agent="Mozilla/5.0" --output-document=Exportar_Nutricion.csv "https://script.google.com/macros/s/AKfycbzT88obTu0hGX-ccdEMhD4c0xbRxYVJxcRQa3Yc0O60diqp4CcgqZKPMjJZc1w7bHY/exec"
+          wget --no-check-certificate --output-document=Exportar_Nutricion.csv "https://docs.google.com/spreadsheets/d/1SVngRRAcMq9Jn3ZSH0tGqI4cTbytCcidI2ESQ6LEgXs/edit?usp=sharing"
 
       - name: Guardar en GitHub
         run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email 'github-actions[bot]@users.noreply.github.com'
           git add Exportar_Nutricion.csv
-          git commit -m "Sincronización forzada de datos" || exit 0
+          git commit -m "Actualización de datos maestros: $(date)" || exit 0
           git push
