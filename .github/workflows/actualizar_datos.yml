@@ -1,0 +1,24 @@
+name: Actualizar CSV desde Google
+on:
+  schedule:
+    - cron: '0 * * * *' # Se ejecuta cada hora automáticamente
+  workflow_dispatch: # Permite ejecutarlo manualmente con un botón
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del repositorio
+        uses: actions/checkout@v3
+
+      - name: Descargar datos de Google Sheets
+        run: |
+          curl -L "https://docs.google.com/spreadsheets/d/1SVngRRAcMq9Jn3ZSH0tGql4CbytCcidI2ESQ6LEGXs/export?format=csv&gid=554583428" -o Exportar_Nutricion.csv
+
+      - name: Guardar cambios en GitHub
+        run: |
+          git config --global user.name 'GitHub Action'
+          git config --global user.email 'action@github.com'
+          git add Exportar_Nutricion.csv
+          git commit -m "Sincronización automática de potreros" || exit 0
+          git push
