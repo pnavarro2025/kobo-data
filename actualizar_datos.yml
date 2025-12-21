@@ -14,15 +14,65 @@ jobs:
 
       - name: Download CSV from Google Sheets
         run: |
-          curl -sSL "https://docs.google.com/spreadsheets/d/e/2PACX-1vST5tQDJLdinNhkOJZOWV9RbTYP0qZCyj2qcLBHnfDU_RdJeGgTNVmBQQ6VM-PwqvyzrgTCMc_Gyp1U/pub?gid=554583428&single=true&output=csv" -o Exportar_Nutricion.csv
+          curl -fsSL "https://docs.google.com/spreadsheets/d/e/2PACX-1vST5tQDJLdinNhkOJZOWV9RbTYP0qZCyj2qcLBHnfDU_RdJeGgTNVmBQQ6VM-PwqvyzrgTCMc_Gyp1U/pub?gid=554583428&single=true&output=csv" -o Exportar_Nutricion_raw.csv
+
+      - name: Normalize CSV for KoboToolbox (UTF-8, commas, remove BOM, normalize headers)
+        working-directory: ${{ github.workspace }}
+        run: |
+          python3 - <<'PY'
+          import csv, io, sys
+          from pathlib import Path
+
+          infile = Path("Exportar_Nutricion_raw.csv")
+          outfile = Path("Exportar_Nutricion.csv")
+
+          if not infile.exists():
+              print("Input file not found:", infile)
+              sys.exit(1)
+
+          # Read raw bytes and decode with utf-8-sig to remove BOM if present.
+          raw = infile.read_bytes()
+          text = raw.decode("utf-8-sig", errors="replace")
+
+          # Normalize line endings and non-breaking spaces
+          text = text.replace('\r\n', '\n').replace('\r', '\n').replace('\u00A0', ' ')
+
+          # Try to detect delimiter (comma, semicolon, tab). Fallback to comma.
+          sample = text[:8192]
+          try:
+              dialect = csv.Sniffer().sniff(sample, delimiters=[',',';','\t'])
+              delim = dialect.delimiter
+          except Exception:
+              delim = ','
+          # Read using detected delimiter
+          reader = csv.reader(io.StringIO(text), delimiter=delim)
+          rows = list(reader)
+
+          # Strip whitespace from headers (first row) if present
+          if rows:
+              rows[0] = [h.strip() if isinstance(h, str) else h for h in rows[0]]
+
+          # Write normalized CSV with comma delimiter and UTF-8 (no BOM)
+          with outfile.open('w', encoding='utf-8', newline='') as f:
+              writer = csv.writer(f, delimiter=',', quoting=csv.QUOTE_MINIMAL)
+              writer.writerows(rows)
+
+          print("Normalized CSV written to", outfile)
+          PY
 
       - name: Commit and push if changed
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Ensure push uses the workflow token
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
+          if [ ! -s Exportar_Nutricion.csv ]; then
+            echo "Exportar_Nutricion.csv is empty or missing — aborting commit."
+            exit 1
+          fi
           if ! git diff --quiet -- Exportar_Nutricion.csv; then
             git add Exportar_Nutricion.csv
-            git commit -m "Update Exportar_Nutricion.csv from Google Sheets"
+            git commit -m "Update Exportar_Nutricion.csv from Google Sheets (normalized for KoboToolbox)"
             git push
           else
             echo "No changes"
