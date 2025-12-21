@@ -1,25 +1,29 @@
-name: Sincronizacion Directa Google-GitHub
+name: Update Exportar_Nutricion.csv from Google Sheets
 
 on:
   schedule:
-    - cron: '0 * * * *'
-  workflow_dispatch:
+    - cron: '0 * * * *' # Se ejecuta cada hora
+  workflow_dispatch: # Permite ejecución manual
 
 jobs:
-  build:
+  update-csv:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout del repositorio
-        uses: actions/checkout@v3
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Descargar CSV de Google Sheets
+      - name: Download CSV from Google Sheets
         run: |
-          wget --no-check-certificate --output-document=Exportar_Nutricion.csv "https://docs.google.com/spreadsheets/d/e/2PACX-1vST5tQDJLdinNhkOJZOWV9RbTYP0qZCyj2qcLBHnfDU_RdJeGgTNVmBQQ6VM-PwqvyzrgTCMc_Gyp1U/pub?gid=554583428&single=true&output=csv"
+          curl -sSL "https://docs.google.com/spreadsheets/d/e/2PACX-1vST5tQDJLdinNhkOJZOWV9RbTYP0qZCyj2qcLBHnfDU_RdJeGgTNVmBQQ6VM-PwqvyzrgTCMc_Gyp1U/pub?gid=554583428&single=true&output=csv" -o Exportar_Nutricion.csv
 
-      - name: Guardar en GitHub
+      - name: Commit and push if changed
         run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-          git add Exportar_Nutricion.csv
-          git commit -m "Sincronización limpia de potreros" || exit 0
-          git push
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if ! git diff --quiet -- Exportar_Nutricion.csv; then
+            git add Exportar_Nutricion.csv
+            git commit -m "Update Exportar_Nutricion.csv from Google Sheets"
+            git push
+          else
+            echo "No changes"
+          fi
