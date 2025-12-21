@@ -18,38 +18,57 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Download CSV from Google Sheets (with checks)
+      - name: Download CSV from Google Sheets (robust)
         run: |
           set -euo pipefail
           URL="$SHEET_CSV_URL"
           echo "Downloading from: $URL"
+
+          # Temp files
           headers="$(mktemp)"
-          curl -sSL -D "$headers" -o Exportar_Nutricion_raw.csv "$URL" || true
-          # HTTP status
-          http_code=$(head -n1 "$headers" | awk '{print $2}')
-          content_type=$(grep -i '^Content-Type:' "$headers" | awk '{for(i=2;i<=NF;i++) printf $i " "}' | sed 's/\r$//' | awk '{$1=$1; print}')
+          out="Exportar_Nutricion_raw.csv"
+
+          # Use a browser-like User-Agent, follow redirects, accept compression and CSV
+          curl -sSL --compressed \
+            -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: text/csv,application/octet-stream,application/vnd.ms-excel;q=0.9,*/*;q=0.8" \
+            -D "$headers" \
+            -o "$out" \
+            "$URL" || true
+
+          # Read HTTP status (first response line in headers file)
+          http_line=$(head -n 1 "$headers" || true)
+          http_code=$(printf "%s" "$http_line" | awk '{print $2}' || echo "")
+          content_type=$(grep -i '^Content-Type:' "$headers" | awk -F: '{print $2}' | tr -d '\r' | sed -e 's/^[[:space:]]*//' || echo "")
+
+          echo "HTTP line: $http_line"
           echo "HTTP code: $http_code"
           echo "Content-Type: $content_type"
-          if [ "$http_code" != "200" ]; then
-            echo "Error: HTTP $http_code al descargar la hoja. La URL puede ser inválida o la hoja no es pública."
+
+          # Basic checks
+          if [ -z "$http_code" ] || [ "$http_code" != "200" ]; then
+            echo "Error: HTTP $http_code al descargar la hoja. Revisa que la hoja esté publicada o que la URL sea correcta."
             echo "Inicio del contenido descargado:"
-            head -n 30 Exportar_Nutricion_raw.csv || true
+            head -n 40 "$out" || true
             exit 1
           fi
-          # If content-type says html, fail
-          if echo "$content_type" | grep -qi 'html'; then
+
+          # If content-type contains html, fail
+          if printf "%s" "$content_type" | grep -qi 'html'; then
             echo "La respuesta tiene Content-Type HTML — probablemente Page Not Found o acceso denegado."
-            echo "Inicio del contenido descargado:"
-            head -n 30 Exportar_Nutricion_raw.csv || true
+            echo "Inicio del contenido descargado (para diagnóstico):"
+            head -n 40 "$out" || true
             exit 1
           fi
-          # Also check the file content for HTML markers
-          if head -n 1 Exportar_Nutricion_raw.csv | grep -Eiq '<!doctype|<html|<HTML'; then
+
+          # Also check file content for common HTML markers
+          if head -n 1 "$out" | grep -Eiq '<!doctype|<html|<HTML'; then
             echo "Detección: el archivo descargado comienza con HTML. Revisa que la hoja esté publicada como CSV o compartida públicamente."
-            head -n 30 Exportar_Nutricion_raw.csv || true
+            head -n 40 "$out" || true
             exit 1
           fi
-          echo "CSV descargado correctamente."
+
+          echo "CSV descargado correctamente a $out"
 
       - name: Normalize CSV for KoboToolbox (UTF-8, commas, remove BOM, normalize headers)
         working-directory: ${{ github.workspace }}
@@ -66,12 +85,13 @@ jobs:
               sys.exit(1)
 
           raw = infile.read_bytes()
+          # decode with utf-8-sig to remove BOM if present
           text = raw.decode("utf-8-sig", errors="replace")
 
           # Normalize line endings and non-breaking spaces
           text = text.replace('\r\n', '\n').replace('\r', '\n').replace('\u00A0', ' ')
 
-          # Use csv.Sniffer to try to detect delimiter; fallback to comma
+          # Sniff delimiter (comma, semicolon, tab), fallback to comma
           sample = text[:8192]
           try:
               dialect = csv.Sniffer().sniff(sample, delimiters=[',',';','\t'])
@@ -85,7 +105,7 @@ jobs:
           if rows:
               rows[0] = [h.strip() if isinstance(h, str) else h for h in rows[0]]
 
-          # Optional: normalize header names to safer form for Kobo (uncomment if desired)
+          # Optional: normalize headers for Kobo (uncomment to enable)
           # rows[0] = [h.strip().replace(' ', '_').lower() for h in rows[0]]
 
           # Write normalized CSV with comma delimiter and UTF-8 (no BOM)
@@ -101,7 +121,7 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # Ensure push uses the workflow token
+          # Use the workflow token for push
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git
           if [ ! -s Exportar_Nutricion.csv ]; then
             echo "Exportar_Nutricion.csv está vacío o no existe — abortando commit."
