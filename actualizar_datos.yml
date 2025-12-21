@@ -1,8 +1,8 @@
 name: Actualizar CSV desde Google
 on:
   schedule:
-    - cron: '0 * * * *' # Se ejecuta cada hora
-  workflow_dispatch: # Permite ejecutarlo manualmente con un botón
+    - cron: '0 * * * *'
+  workflow_dispatch:
 
 jobs:
   build:
@@ -20,5 +20,5 @@ jobs:
           git config --global user.name 'GitHub Action'
           git config --global user.email 'action@github.com'
           git add Exportar_Nutricion.csv
-          git commit -m "Sincronización automática de potreros" || exit 0
+          git commit -m "Sincronizacion automatica" || exit 0
           git push
